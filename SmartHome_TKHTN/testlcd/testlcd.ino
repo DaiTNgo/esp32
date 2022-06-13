@@ -22,14 +22,16 @@ byte degree[8] = {
   0B00000,
   0B00000
 };
-int warnPin = 10; // loa,den ket noi Pin 10
-int button = 2;   // button ket noi Pin 2
-int gas_din = 9;  // Dout ket noi Pin 9
-int gas_ain = A0; // Aout ket noi Pin A0
-int ad_value;     // bien luu gia tri adc
+
 int button_value; // bien luu trang thai button
 
+int ad_value;     // bien luu gia tri adc
 int per;
+
+#define gas_ain A0 // Aout ket noi Pin A0
+#define gas_din 9  // Dout ket noi Pin 9
+#define button 2   // button ket noi Pin 2
+#define warnPin 10 // loa,den ket noi Pin 10
 #define ledRed 8
 #define ledGreen 7
 #define gasSensor 6
@@ -43,8 +45,8 @@ TaskHandle_t xHandler;
 
 void setup()
 {
-  Serial.begin(9600);
-
+  Serial.begin(115200);
+  Serial2.begin(9600);
   pinMode(gas_din, INPUT);  // set Input
   pinMode(gas_ain, INPUT);  // set Input
   pinMode(warnPin, OUTPUT); // set Output
@@ -72,14 +74,10 @@ void setup()
   queueDht11_Temperature = xQueueCreate(1, sizeof(float));
 
   dht.begin();
-
+  xTaskCreate(Gas_task, "Gas task", 2048, NULL, 7, NULL);
   xTaskCreate(Dht11_task, "DHT11 task", 2048, NULL, 6, NULL);
-  xTaskCreate(Lcd_task, "lcd task", 2048, NULL, 5, NULL);
-  // ========================================================
-//  xTaskCreate(Gas_task, "gas task", 4096, NULL, 4, NULL);
-  // ========================================================
-    xTaskCreate(taskReadSensor, "Read Sensor gas", 120, NULL, 4, &xReadSs);
-  //  xTaskCreate(taskHandler, "Status gas", 120, NULL, 1, &xHandler);
+  xTaskCreate(Lcd_task, "Lcd task", 2048, NULL, 5, NULL);
+  xTaskCreate(Lamp_task, "Lamp task", 120, NULL, 4, NULL);
   vTaskStartScheduler();
   for (;;) {}
 }
@@ -88,9 +86,9 @@ void Dht11_task(void *pvParameter)
 {
   while (1)
   {
-//    Serial.println("dht11 task\n");
-    float humidity = dht.readHumidity();       //Đọc độ ẩm
-    float temperature = dht.readTemperature(); //Đọc nhiệt độ
+    Serial.println("dht11 task\n");
+    float humidity = dht.readHumidity();
+    float temperature = dht.readTemperature();
 
     if (isnan(temperature) || isnan(humidity))
     {
@@ -111,7 +109,7 @@ void Lcd_task(void *arg)
   float gBuffer_t;
   while (1)
   {
-//    Serial.println("lcd task\n");
+    Serial.println("lcd task\n");
     xQueueReceive(queueDht11_Humidity, &gBuffer_h, (TickType_t)0);
     xQueueReceive(queueDht11_Temperature, &gBuffer_t, (TickType_t)0);
 
@@ -130,81 +128,59 @@ void Lcd_task(void *arg)
     Serial.println(gBuffer_h); // Xuất độ ẩm
     Serial.println();          // Xuống hàng
 
-    vTaskDelay(50 / portTICK_PERIOD_MS);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
   }
 }
 
 void Gas_task(void *arg)
 {
-Serial.println("GAS task");
-  ad_value = analogRead(gas_ain);       // doc gia tri adc
-  per = map(ad_value, 0, 1023, 0, 100); // Chuyển nồng độ khí gas về đơn vị %.
-  if (digitalRead(gas_din) == LOW)      // so sanh vs LOW, neu = thong bao co gas, den va loa bat
-  {
-    Serial.println("CO GAS");
-    Serial.println(ad_value);
-    digitalWrite(warnPin, HIGH);
-  }
-  button_value = digitalRead(button); // doc trang thai button
-  if (button_value == HIGH)           // nhan button
-  {
-    while (button_value == HIGH) // doi phim nha
-    {
-      button_value = digitalRead(button);
-    }
-    digitalWrite(warnPin, LOW);    // tat loa va den
-    Serial.println("BINH THUONG"); // thong bao binh thuong
-  }
-}
+  while (1) {
 
-void taskReadSensor(void *pvPara)
-{
-  while (1)
-  {
     Serial.println("GAS task");
-    int gas = analogRead(A0);
-    lcd.setCursor(1, 0);
-    lcd.print("Gas value: ");
-    if (gas >= 100)
+
+    ad_value = analogRead(gas_ain);       // doc gia tri adc
+    per = map(ad_value, 0, 1023, 0, 100); // Chuyển nồng độ khí gas về đơn vị %.
+    if (digitalRead(gas_din) == LOW)      // so sanh vs LOW, neu = thong bao co gas, den va loa bat
     {
-      lcd.print(gas);
-      lcd.print("--");
+      Serial.println("CO GAS");
+      Serial.println(ad_value);
+      digitalWrite(warnPin, HIGH);
     }
-    else
+    button_value = digitalRead(button); // doc trang thai button
+    if (button_value == HIGH)           // nhan button
     {
-      lcd.print(gas);
-      lcd.print("--");
+      while (button_value == HIGH) // doi phim nha
+      {
+        button_value = digitalRead(button);
+      }
+      digitalWrite(warnPin, LOW);    // tat loa va den
+      Serial.println("BINH THUONG"); // thong bao binh thuong
     }
-//    delay(500);
-    xQueueOverwrite(queueGas, (void *)&gas);
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    vTaskDelay(50 / portTICK_PERIOD_MS);
   }
 }
 
-void taskHandler(void *pvPara)
+void Lamp_task(void *pvPara)
 {
-  int gBuffer;
+
+  float gBuffer_h;
+  float gBuffer_t;
   while (1)
   {
-    xQueuePeek(queueGas, &gBuffer, (TickType_t)10);
+    Serial.println("Lamp task");
+    xQueueReceive(queueDht11_Humidity, &gBuffer_h, (TickType_t)0);
+    xQueueReceive(queueDht11_Temperature, &gBuffer_t, (TickType_t)0);
 
-    if (gBuffer < 300)
-    {
-      Serial.println("Gas normal.");
-      digitalWrite(ledRed, 0);
-      digitalWrite(ledGreen, 1);
-      digitalWrite(buzzer, 0);
-    }
-    else
-    {
-      Serial.println("Gas Warning!!!");
-      digitalWrite(ledRed, 1);
-      digitalWrite(ledGreen, 0);
-      digitalWrite(buzzer, 1);
-    }
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+
+    String chuoiSendWebJson = "{\"nhietdo\":\"" + String(gBuffer_t) + "\","
+                              + "\"doam\":\"" + String(gBuffer_h) + "\","
+                              + "\"gas\":\"" + String(per) + "\"}";
+    Serial2.println(chuoiSendWebJson);
+    Serial2.flush();
+    vTaskDelay(200 / portTICK_PERIOD_MS);
   }
 }
+
 
 void loop()
 {
