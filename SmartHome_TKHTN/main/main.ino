@@ -37,12 +37,15 @@ int per;
 #define gasSensor 6
 #define buzzer 4
 
+SemaphoreHandle_t interruptSemaphore;
+
 QueueHandle_t queueGas;
 QueueHandle_t queueDht11_Humidity;
 QueueHandle_t queueDht11_Temperature;
 TaskHandle_t xReadSs;
 TaskHandle_t xHandler;
 
+// xSemaphoreTake(xSemaphore, portMAX_DELAY);
 void setup()
 {
   Serial.begin(115200);
@@ -74,10 +77,16 @@ void setup()
   queueDht11_Temperature = xQueueCreate(1, sizeof(float));
 
   dht.begin();
+
+  interruptSemaphore = xSemaphoreCreateBinary();
+   if (interruptSemaphore != NULL) {
+    attachInterrupt(digitalPinToInterrupt(2), interruptHandler, LOW);
+  }
   xTaskCreate(Gas_task, "Gas task", 2048, NULL, 7, NULL);
   xTaskCreate(Dht11_task, "DHT11 task", 2048, NULL, 6, NULL);
   xTaskCreate(Lcd_task, "Lcd task", 2048, NULL, 5, NULL);
   xTaskCreate(Lamp_task, "Lamp task", 120, NULL, 4, NULL);
+  xTaskCreate(Button_task,"Led",128,NULL,0,NULL );
   vTaskStartScheduler();
   for (;;) {}
 }
@@ -146,16 +155,16 @@ void Gas_task(void *arg)
       Serial.println(ad_value);
       digitalWrite(warnPin, HIGH);
     }
-    button_value = digitalRead(button); // doc trang thai button
-    if (button_value == HIGH)           // nhan button
-    {
-      while (button_value == HIGH) // doi phim nha
-      {
-        button_value = digitalRead(button);
-      }
-      digitalWrite(warnPin, LOW);    // tat loa va den
-      Serial.println("BINH THUONG"); // thong bao binh thuong
-    }
+    // button_value = digitalRead(button); // doc trang thai button
+    // if (button_value == HIGH)           // nhan button
+    // {
+    //   while (button_value == HIGH) // doi phim nha
+    //   {
+    //     button_value = digitalRead(button);
+    //   }
+    //   digitalWrite(warnPin, LOW);    // tat loa va den
+    //   Serial.println("BINH THUONG"); // thong bao binh thuong
+    // }
     vTaskDelay(50 / portTICK_PERIOD_MS);
   }
 }
@@ -181,6 +190,34 @@ void Lamp_task(void *pvPara)
   }
 }
 
+void interruptHandler() {
+  xSemaphoreGiveFromISR(interruptSemaphore, NULL);
+}
+
+void Button_task(void *pvParameters)
+{
+  (void) pvParameters;
+
+  pinMode(LED_BUILTIN, OUTPUT);
+
+  for (;;) {
+
+    if (xSemaphoreTake(interruptSemaphore, portMAX_DELAY) == pdPASS) {
+      // digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+    // if (button_value == HIGH)           // nhan button
+    // {
+    //   while (button_value == HIGH) // doi phim nha
+    //   {
+    //     button_value = digitalRead(button);
+    //   }
+    // }
+      digitalWrite(warnPin, LOW);    // tat loa va den
+      Serial.println("BINH THUONG"); // thong bao binh thuong
+    }
+
+    vTaskDelay(10);
+  }
+}
 
 void loop()
 {
